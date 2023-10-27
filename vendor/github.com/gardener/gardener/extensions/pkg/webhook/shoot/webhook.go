@@ -18,13 +18,13 @@ import (
 	"context"
 	"fmt"
 
-	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/gardener/gardener/extensions/pkg/controller"
+	"github.com/gardener/gardener/extensions/pkg/webhook"
 	v1beta1constants "github.com/gardener/gardener/pkg/apis/core/v1beta1/constants"
 	"github.com/gardener/gardener/pkg/client/kubernetes"
 	"github.com/gardener/gardener/pkg/extensions"
@@ -44,7 +44,7 @@ func ReconcileWebhookConfig(
 	extensionName string,
 	managedResourceName string,
 	serverPort int,
-	shootWebhookConfig *admissionregistrationv1.MutatingWebhookConfiguration,
+	shootWebhookConfigs webhook.Configs,
 	cluster *controller.Cluster,
 ) error {
 	if err := EnsureEgressNetworkPolicy(ctx, c, shootNamespace, extensionNamespace, extensionName, serverPort); err != nil {
@@ -57,7 +57,7 @@ func ReconcileWebhookConfig(
 
 	data, err := managedresources.
 		NewRegistry(kubernetes.ShootScheme, kubernetes.ShootCodec, kubernetes.ShootSerializer).
-		AddAllAndSerialize(shootWebhookConfig)
+		AddAllAndSerialize(shootWebhookConfigs.GetWebhookConfigs()...)
 	if err != nil {
 		return err
 	}
@@ -80,7 +80,7 @@ func ReconcileWebhooksForAllNamespaces(
 	managedResourceName string,
 	shootNamespaceSelector map[string]string,
 	port int,
-	shootWebhookConfig *admissionregistrationv1.MutatingWebhookConfiguration,
+	shootWebhookConfigs webhook.Configs,
 ) error {
 	namespaceList := &corev1.NamespaceList{}
 	if err := c.List(ctx, namespaceList, client.MatchingLabels(utils.MergeStringMaps(map[string]string{
@@ -115,7 +115,7 @@ func ReconcileWebhooksForAllNamespaces(
 				return err
 			}
 
-			return ReconcileWebhookConfig(ctx, c, namespaceName, extensionNamespace, extensionName, managedResourceName, port, shootWebhookConfig.DeepCopy(), cluster)
+			return ReconcileWebhookConfig(ctx, c, namespaceName, extensionNamespace, extensionName, managedResourceName, port, *shootWebhookConfigs.DeepCopy(), cluster)
 		})
 	}
 

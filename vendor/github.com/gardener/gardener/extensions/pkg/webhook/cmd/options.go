@@ -17,13 +17,12 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync/atomic"
 
 	"github.com/spf13/pflag"
-	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/utils/clock"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
@@ -257,14 +256,21 @@ func (c *AddToManagerConfig) AddToManager(ctx context.Context, mgr manager.Manag
 	}
 
 	for _, wh := range webhooks {
+		path := wh.Path
+		if path == "" {
+			path = "/" + wh.Name
+		} else if !strings.HasPrefix("/", path) {
+			path = "/" + path
+		}
+
 		if wh.Handler != nil {
-			webhookServer.Register("/"+wh.Name, wh.Handler)
+			webhookServer.Register(path, wh.Handler)
 		} else {
-			webhookServer.Register("/"+wh.Name, wh.Webhook)
+			webhookServer.Register(path, wh.Webhook)
 		}
 	}
 
-	seedWebhookConfig, shootWebhookConfig, err := extensionswebhook.BuildWebhookConfigs(
+	seedWebhookConfigs, shootWebhookConfigs, err := extensionswebhook.BuildWebhookConfigs(
 		webhooks,
 		mgr.GetClient(),
 		c.Server.Namespace,
@@ -278,7 +284,7 @@ func (c *AddToManagerConfig) AddToManager(ctx context.Context, mgr manager.Manag
 		return nil, fmt.Errorf("could not create webhooks: %w", err)
 	}
 
-	atomicShootWebhookConfig := &atomic.Value{}
+	atomicShootWebhookConfigs := &atomic.Value{}
 
 	if c.Server.Namespace == "" {
 		// If the namespace is not set (e.g. when running locally), then we can't use the secrets manager for managing
@@ -291,23 +297,23 @@ func (c *AddToManagerConfig) AddToManager(ctx context.Context, mgr manager.Manag
 			return nil, fmt.Errorf("error generating new certificates for webhook server: %w", err)
 		}
 
-		if shootWebhookConfig != nil {
-			if err := extensionswebhook.InjectCABundleIntoWebhookConfig(shootWebhookConfig, caBundle); err != nil {
+		for _, webhookConfig := range shootWebhookConfigs.GetWebhookConfigs() {
+			if err := extensionswebhook.InjectCABundleIntoWebhookConfig(webhookConfig, caBundle); err != nil {
 				return nil, err
 			}
-			atomicShootWebhookConfig.Store(shootWebhookConfig.DeepCopy())
 		}
+		atomicShootWebhookConfigs.Store(shootWebhookConfigs.DeepCopy())
 
 		// register seed webhook config once we become leader – with the CA bundle we just generated
 		// also reconcile all shoot webhook configs to update the CA bundle
 		if err := mgr.Add(runOnceWithLeaderElection(flow.Sequential(
-			c.reconcileSeedWebhookConfig(mgr, seedWebhookConfig, caBundle),
-			c.reconcileShootWebhookConfigs(mgr, shootWebhookConfig, caBundle),
+			c.reconcileSeedWebhookConfig(mgr, seedWebhookConfigs, caBundle),
+			c.reconcileShootWebhookConfigs(mgr, shootWebhookConfigs),
 		))); err != nil {
 			return nil, err
 		}
 
-		return atomicShootWebhookConfig, nil
+		return atomicShootWebhookConfigs, nil
 	}
 
 	// register seed webhook config once we become leader – without CA bundle
@@ -315,23 +321,18 @@ func (c *AddToManagerConfig) AddToManager(ctx context.Context, mgr manager.Manag
 	// reconciler. That's why we also don't reconcile the shoot webhook configs here. They are registered in the
 	// ControlPlane actuator and our reconciler will update the included CA bundles if necessary.
 	if err := mgr.Add(runOnceWithLeaderElection(
-		c.reconcileSeedWebhookConfig(mgr, seedWebhookConfig, nil),
+		c.reconcileSeedWebhookConfig(mgr, seedWebhookConfigs, nil),
 	)); err != nil {
 		return nil, err
-	}
-
-	var sourceWebhookConfigs []client.Object
-	if seedWebhookConfig != nil {
-		sourceWebhookConfigs = append(sourceWebhookConfigs, seedWebhookConfig)
 	}
 
 	if err := certificates.AddCertificateManagementToManager(
 		ctx,
 		mgr,
 		c.Clock,
-		sourceWebhookConfigs,
-		shootWebhookConfig,
-		atomicShootWebhookConfig,
+		seedWebhookConfigs,
+		&shootWebhookConfigs,
+		atomicShootWebhookConfigs,
 		c.shootNamespaceSelector,
 		c.shootWebhookManagedResourceName,
 		c.extensionName,
@@ -342,13 +343,13 @@ func (c *AddToManagerConfig) AddToManager(ctx context.Context, mgr manager.Manag
 		return nil, err
 	}
 
-	return atomicShootWebhookConfig, nil
+	return atomicShootWebhookConfigs, nil
 }
 
-func (c *AddToManagerConfig) reconcileSeedWebhookConfig(mgr manager.Manager, seedWebhookConfig client.Object, caBundle []byte) func(ctx context.Context) error {
+func (c *AddToManagerConfig) reconcileSeedWebhookConfig(mgr manager.Manager, webhookConfigs extensionswebhook.Configs, caBundle []byte) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
-		if seedWebhookConfig != nil {
-			if err := extensionswebhook.ReconcileSeedWebhookConfig(ctx, mgr.GetClient(), seedWebhookConfig, c.Server.Namespace, caBundle); err != nil {
+		for _, webhookConfig := range webhookConfigs.GetWebhookConfigs() {
+			if err := extensionswebhook.ReconcileSeedWebhookConfig(ctx, mgr.GetClient(), webhookConfig, c.Server.Namespace, caBundle); err != nil {
 				return fmt.Errorf("error reconciling seed webhook config: %w", err)
 			}
 		}
@@ -356,20 +357,16 @@ func (c *AddToManagerConfig) reconcileSeedWebhookConfig(mgr manager.Manager, see
 	}
 }
 
-func (c *AddToManagerConfig) reconcileShootWebhookConfigs(mgr manager.Manager, shootWebhookConfig *admissionregistrationv1.MutatingWebhookConfiguration, caBundle []byte) func(ctx context.Context) error {
+func (c *AddToManagerConfig) reconcileShootWebhookConfigs(mgr manager.Manager, shootWebhookConfigs extensionswebhook.Configs) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
-		if shootWebhookConfig != nil {
-			if err := extensionswebhook.InjectCABundleIntoWebhookConfig(shootWebhookConfig, caBundle); err != nil {
-				return err
-			}
-
+		if shootWebhookConfigs.HasWebhookConfig() {
 			webhookServer := mgr.GetWebhookServer()
 			defaultServer, ok := webhookServer.(*webhook.DefaultServer)
 			if !ok {
 				return fmt.Errorf("expected *webhook.DefaultServer, got %T", webhookServer)
 			}
 
-			if err := extensionsshootwebhook.ReconcileWebhooksForAllNamespaces(ctx, mgr.GetClient(), c.Server.Namespace, c.extensionName, c.shootWebhookManagedResourceName, c.shootNamespaceSelector, defaultServer.Options.Port, shootWebhookConfig); err != nil {
+			if err := extensionsshootwebhook.ReconcileWebhooksForAllNamespaces(ctx, mgr.GetClient(), c.Server.Namespace, c.extensionName, c.shootWebhookManagedResourceName, c.shootNamespaceSelector, defaultServer.Options.Port, shootWebhookConfigs); err != nil {
 				return fmt.Errorf("error reconciling all shoot webhook configs: %w", err)
 			}
 		}

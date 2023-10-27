@@ -143,3 +143,5 @@ require (
 	sigs.k8s.io/structured-merge-diff/v4 v4.2.3 // indirect
 	sigs.k8s.io/yaml v1.3.0 // indirect
 )
+
+replace github.com/gardener/gardener => github.com/timuthy/gardener v0.0.0-20231027195059-c63b1b79e3f3
