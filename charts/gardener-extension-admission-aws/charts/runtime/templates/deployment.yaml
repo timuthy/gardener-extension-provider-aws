@@ -45,7 +45,9 @@ spec:
         command:
         - /gardener-extension-admission-aws
         - --webhook-config-server-port={{ .Values.global.webhookConfig.serverPort }}
-        - --webhook-config-cert-dir=/etc/gardener-extension-admission-aws/srv
+        - --webhook-config-mode=url
+        - --webhook-config-service-namespace={{ .Release.Namespace }}
+        - --webhook-config-url={{ include "name" . }}.{{ .Release.Namespace }}
         {{- if .Values.global.kubeconfig }}
         - --kubeconfig=/etc/gardener-extension-admission-aws/kubeconfig/kubeconfig
         {{- end }}

@@ -17,6 +17,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"os"
 
 	controllercmd "github.com/gardener/gardener/extensions/pkg/controller/cmd"
 	"github.com/gardener/gardener/extensions/pkg/util"
@@ -46,8 +47,18 @@ func NewAdmissionCommand(ctx context.Context) *cobra.Command {
 			MetricsBindAddress: ":8080",
 			HealthBindAddress:  ":8081",
 		}
+		// options for the webhook server
+		webhookServerOptions = &webhookcmd.ServerOptions{
+			Namespace: os.Getenv("WEBHOOK_CONFIG_NAMESPACE"),
+		}
+
 		webhookSwitches = admissioncmd.GardenWebhookSwitchOptions()
-		webhookOptions  = webhookcmd.NewAddToManagerSimpleOptions(webhookSwitches)
+		webhookOptions  = webhookcmd.NewAddToManagerOptions(
+			"admission-aws",
+			"",
+			nil,
+			webhookServerOptions,
+			webhookSwitches)
 
 		aggOption = controllercmd.NewOptionAggregator(
 			restOpts,
@@ -83,7 +94,7 @@ func NewAdmissionCommand(ctx context.Context) *cobra.Command {
 			}
 
 			log.Info("Setting up webhook server")
-			if err := webhookOptions.Completed().AddToManager(mgr); err != nil {
+			if _, err := webhookOptions.Completed().AddToManager(ctx, mgr); err != nil {
 				return err
 			}
 
