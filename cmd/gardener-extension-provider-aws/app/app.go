@@ -232,7 +232,7 @@ func NewControllerManagerCommand(ctx context.Context) *cobra.Command {
 			controlplanewebhook.GardenletManagesMCM = generalOpts.Completed().GardenletManagesMCM
 			healthcheck.GardenletManagesMCM = generalOpts.Completed().GardenletManagesMCM
 
-			atomicShootWebhookConfig, err := webhookOptions.Completed().AddToManager(ctx, mgr)
+			atomicShootWebhookConfig, err := webhookOptions.Completed().AddToManager(ctx, mgr, nil)
 			if err != nil {
 				return fmt.Errorf("could not add webhooks to manager: %w", err)
 			}

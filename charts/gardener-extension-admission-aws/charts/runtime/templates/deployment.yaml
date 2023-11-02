@@ -58,6 +58,11 @@ spec:
         - --metrics-bind-address=:{{ .Values.global.metricsPort }}
         {{- end }}
         - --health-bind-address=:{{ .Values.global.healthPort }}
+        {{- if .Values.global.virtualGarden.enabled}}
+        env:
+        - name: SOURCE_CLUSTER
+          value: enabled
+        {{- end }}
         livenessProbe:
           httpGet:
             path: /healthz

@@ -137,7 +137,7 @@ github.com/fsnotify/fsnotify
 # github.com/gardener/etcd-druid v0.19.2
 ## explicit; go 1.20
 github.com/gardener/etcd-druid/api/v1alpha1
-# github.com/gardener/gardener v1.80.3 => github.com/timuthy/gardener v0.0.0-20231027195059-c63b1b79e3f3
+# github.com/gardener/gardener v1.80.3 => github.com/timuthy/gardener v0.0.0-20231103075036-aa3f0842d580
 ## explicit; go 1.21
 github.com/gardener/gardener/.github
 github.com/gardener/gardener/.github/ISSUE_TEMPLATE
@@ -1299,4 +1299,4 @@ sigs.k8s.io/structured-merge-diff/v4/value
 # sigs.k8s.io/yaml v1.3.0
 ## explicit; go 1.12
 sigs.k8s.io/yaml
-# github.com/gardener/gardener => github.com/timuthy/gardener v0.0.0-20231027195059-c63b1b79e3f3
+# github.com/gardener/gardener => github.com/timuthy/gardener v0.0.0-20231103075036-aa3f0842d580

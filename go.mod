@@ -144,4 +144,4 @@ require (
 	sigs.k8s.io/yaml v1.3.0 // indirect
 )
 
-replace github.com/gardener/gardener => github.com/timuthy/gardener v0.0.0-20231027195059-c63b1b79e3f3
+replace github.com/gardener/gardener => github.com/timuthy/gardener v0.0.0-20231103075036-aa3f0842d580
